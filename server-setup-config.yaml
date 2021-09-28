@@ -148,6 +148,16 @@ install:
 
   # Whether to install the Loader (Forge or Fabric) or not, should always be yes/true unless you only want to install the pack
   installLoader: yes
+  
+  # Whether to run the Installer, disable if you download the Server directly instead of an Installer (ex. Magma)
+  runInstaller: yes
+  
+  # Whether external libraries need to be installed in order to run the Server (ex. Crucible)
+  installLibraries: no
+  
+  # Libraries zip URL
+  # Needs to contain all libraries DIRECTLY in the zip file
+  libraries: ~
 
   # Sponge bootstrapper jar URL
   # Only needed if you have spongefix enabled
