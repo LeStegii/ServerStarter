@@ -2,19 +2,26 @@ package atm.bloodworkxgaming.serverstarter
 
 
 import atm.bloodworkxgaming.serverstarter.ServerStarter.Companion.LOGGER
+import atm.bloodworkxgaming.serverstarter.ServerStarter.Companion.config
 import atm.bloodworkxgaming.serverstarter.ServerStarter.Companion.lockFile
 import atm.bloodworkxgaming.serverstarter.config.ConfigFile
+import atm.bloodworkxgaming.serverstarter.packtype.writeToFile
 import org.apache.commons.io.FileUtils
 import org.apache.commons.io.FilenameUtils
 import org.fusesource.jansi.Ansi.ansi
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileNotFoundException
 import java.io.IOException
+import java.nio.file.Paths
 import java.time.LocalDateTime
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import java.util.*
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
+import java.util.zip.ZipInputStream
 import kotlin.math.max
 
 class LoaderManager(private val configFile: ConfigFile) {
@@ -107,32 +114,46 @@ class LoaderManager(private val configFile: ConfigFile) {
                 .replace("{{@mcversion@}}", mcVersion)
         // http://files.minecraftforge.net/maven/net/minecraftforge/forge/1.12.2-14.23.3.2682/forge-1.12.2-14.23.3.2682-installer.jar
         //val installerPath = File(basePath + "forge-" + versionString + "-installer.jar")
-        val installerPath = File(basePath + "installer.jar")
+        var splitUrl = url.split("/")
+        val installerPath = File(basePath + splitUrl[splitUrl.size - 1])
 
 
         try {
             LOGGER.info("Attempting to download installer from $url")
             InternetManager.downloadToFile(url, installerPath)
 
-            LOGGER.info("Starting installation of Loader, installer output incoming")
-            LOGGER.info("Check log for installer for more information", true)
-            val java = if (configFile.launch.forcedJavaPath.isEmpty()) "java" else configFile.launch.forcedJavaPath
-            val installer = ProcessBuilder(java, "-jar", installerPath.absolutePath, *configFile.install.installerArguments.toTypedArray())
-                    .inheritIO()
-                    .directory(File("$basePath."))
-                    .start()
+            if (configFile.install.runInstaller) {
+                LOGGER.info("Starting installation of Loader, installer output incoming")
+                LOGGER.info("Check log for installer for more information", true)
+                val java = if (configFile.launch.forcedJavaPath.isEmpty()) "java" else configFile.launch.forcedJavaPath
+                val installer = ProcessBuilder(java, "-jar", installerPath.absolutePath, *configFile.install.installerArguments.toTypedArray())
+                        .inheritIO()
+                        .directory(File("$basePath."))
+                        .start()
 
-            installer.waitFor()
+                installer.waitFor()
 
-            LOGGER.info("Done installing loader, deleting installer!")
+                LOGGER.info("Done installing loader, deleting installer!")
+                installerPath.delete()
+            } else
+                LOGGER.info("Didn't run the installer. If you wish to run it, enable 'runInstaller' in the config.")
 
+            if (configFile.install.installLibraries) {
+                val librariesUrl = configFile.install.libraries
+                val librariesPath = File(basePath + "libraries.zip")
+
+                LOGGER.info("Attempting to download libraries from $librariesUrl")
+
+                InternetManager.downloadToFile(librariesUrl, librariesPath)
+                LOGGER.info("Attempting to unzip libraries at $librariesPath")
+                unzip(basePath, librariesPath.absolutePath)
+            }
             lockFile.loaderInstalled = true
             lockFile.loaderVersion = loaderVersion
             lockFile.mcVersion = mcVersion
             ServerStarter.saveLockFile(lockFile)
 
 
-            installerPath.delete()
 
 
             checkEULA(basePath)
@@ -246,6 +267,53 @@ class LoaderManager(private val configFile: ConfigFile) {
                 errorStream.close()
                 inputStream.close()
             }
+        }
+    }
+
+    private fun unzip(basePath: String, path: String) {
+        val oldFiles = File(basePath + "OLD_TO_DELETE/")
+        FileUtils.deleteDirectory(oldFiles)
+
+        try {
+            ZipInputStream(FileInputStream(File(path))).use { zis ->
+                var entry: ZipEntry? = zis.nextEntry
+
+                loop@ while (entry != null) {
+                    LOGGER.info("Entry in zip: $entry", true)
+                    val name = entry.name
+
+                    // overrides
+                    val path =  if (name.startsWith("libraries/")) "" else "libraries/" + entry.name
+
+                    when {
+
+                        !name.endsWith("/") -> {
+                            val outfile = File(path)
+                            LOGGER.info("Copying zip entry to = $outfile", true)
+
+
+                            outfile.parentFile?.mkdirs()
+                            zis.writeToFile(outfile)
+                        }
+
+                        else -> {
+                            val newFolder = File(basePath + path)
+                            if (newFolder.exists())
+                                FileUtils.moveDirectory(newFolder, File(oldFiles, basePath + path))
+
+                            LOGGER.info("Folder moved: " + newFolder.absolutePath, true)
+                        }
+                    }
+
+
+                    entry = zis.nextEntry
+                }
+
+
+                zis.closeEntry()
+            }
+        } catch (e: IOException) {
+            LOGGER.error("Could not unzip files", e)
         }
     }
 }

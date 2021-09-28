@@ -53,6 +53,10 @@ data class InstallConfig(
         var checkFolder: Boolean = false,
         var installLoader: Boolean = false,
 
+        var runInstaller: Boolean = false,
+        var installLibraries: Boolean = false,
+        var libraries: String = "",
+
         var spongeBootstrapper: String = "") {
 
 
